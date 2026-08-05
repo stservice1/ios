@@ -1,3 +1,6 @@
+# Secrets / local-only config — never commit
+github_token
+
 # Build artifacts
 build*.log
 DerivedData/
