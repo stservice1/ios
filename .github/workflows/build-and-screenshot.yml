@@ -160,11 +160,21 @@ jobs:
           set -euo pipefail
           export PATH="$PATH:$HOME/.maestro/bin"
           maestro --device "${{ steps.sim.outputs.udid }}" test .maestro/login-to-main.yaml
-          SHOT=$(find . "$HOME" -maxdepth 4 -iname "main-view.png" -newermt '-2 minutes' -print -quit 2>/dev/null)
+
+          # `takeScreenshot: main-view` writes into Maestro's own per-run
+          # report dir (~/.maestro/tests/<timestamp>/), not the cwd — search
+          # there first, then fall back to a broad search with full listing
+          # for debugging if it's moved again in a future Maestro version.
+          SHOT=$(find "$HOME/.maestro/tests" -iname "main-view.png" -newermt '-5 minutes' -print -quit 2>/dev/null)
           if [ -z "$SHOT" ]; then
-            echo "::warning::Maestro flow ran but main-view.png wasn't found."
+            SHOT=$(find . "$HOME" /tmp -iname "main-view.png" -newermt '-5 minutes' -print -quit 2>/dev/null)
+          fi
+          if [ -z "$SHOT" ]; then
+            echo "::warning::main-view.png not found after the Maestro flow completed. Recent .png files, for debugging:"
+            find "$HOME" /tmp . -iname "*.png" -newermt '-5 minutes' 2>/dev/null
             exit 1
           fi
+          echo "Found screenshot at: $SHOT"
           cp "$SHOT" screenshot-main.png
           echo "ok=true" >> "$GITHUB_OUTPUT"
 
