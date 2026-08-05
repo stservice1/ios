@@ -11,7 +11,7 @@ import SwiftUI
 struct EverywhereApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            STRootView()
         }
     }
 }
