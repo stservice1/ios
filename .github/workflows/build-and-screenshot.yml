@@ -113,12 +113,12 @@ jobs:
             xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -q "com.stservice.stvpn"
           }
 
-          # SIMCTL_CHILD_<X> env vars get forwarded to the launched process as
-          # <X> — this flips the DEBUG-only fake-running escape hatch in
-          # TunnelManager so the screenshot captures the connected/dashboard
-          # UI instead of the disconnected Home tab (Simulator can't run a
-          # real Network Extension tunnel).
-          export SIMCTL_CHILD_STVPN_FAKE_RUNNING=1
+          # Note: TunnelManager has a DEBUG-only STVPN_FAKE_RUNNING escape hatch
+          # (set SIMCTL_CHILD_STVPN_FAKE_RUNNING=1 here to use it) that skips
+          # straight to the running/dashboard UI. Left off by default — it jumps
+          # into zashboard with no real backend behind it, which just shows
+          # zashboard's own "configure a connection" onboarding, not what a real
+          # user sees. The plain Home tab below is the accurate opening screen.
 
           xcrun simctl launch "$UDID" com.stservice.stvpn
           sleep 6
