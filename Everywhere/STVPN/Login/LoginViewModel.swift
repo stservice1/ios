@@ -9,6 +9,7 @@
 //  itself.
 //
 
+import Combine
 import Foundation
 
 /// Mirrors Kotlin's `LoginActivity.ValidationResult` nested data class.
