@@ -153,6 +153,19 @@ jobs:
           curl -Ls "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
+      # Temporary diagnostic: the app's own AliDNS TXT lookup for SC645888
+      # has been returning "Node code not found" from this runner even
+      # though the same query resolves fine from other networks — this
+      # checks straight from the runner's network path (same as the
+      # Simulator's request) to tell a runner/DNS-resolver-side issue apart
+      # from an app-side parsing bug. Safe to remove once diagnosed.
+      - name: Debug - query AliDNS TXT record directly from the runner
+        continue-on-error: true
+        run: |
+          echo "--- Direct curl from the runner ---"
+          curl -sS -w '\n[http:%{http_code} time:%{time_total}s]\n' \
+            "https://dns.alidns.com/resolve?name=SC645888.stservice88.ddnsfree.com&type=TXT" || true
+
       - name: Run login flow with Maestro (type node code, log in, screenshot Main)
         id: maestro
         continue-on-error: true # best-effort: don't let a flaky UI-automation step sink the login screenshot we already have
