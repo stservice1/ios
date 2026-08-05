@@ -10,6 +10,8 @@ jobs:
   build-and-screenshot:
     runs-on: macos-15
     timeout-minutes: 30
+    permissions:
+      contents: write # needed to push the screenshot to the `screenshots` branch
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -111,6 +113,13 @@ jobs:
             xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -q "com.stservice.stvpn"
           }
 
+          # SIMCTL_CHILD_<X> env vars get forwarded to the launched process as
+          # <X> — this flips the DEBUG-only fake-running escape hatch in
+          # TunnelManager so the screenshot captures the connected/dashboard
+          # UI instead of the disconnected Home tab (Simulator can't run a
+          # real Network Extension tunnel).
+          export SIMCTL_CHILD_STVPN_FAKE_RUNNING=1
+
           xcrun simctl launch "$UDID" com.stservice.stvpn
           sleep 6
           if ! is_running; then
@@ -143,11 +152,32 @@ jobs:
           name: stvpn-opening-screen
           path: screenshot.png
 
+      - name: Publish screenshot to screenshots branch (stable direct link)
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          WORKDIR=$(mktemp -d)
+          git -C "$WORKDIR" init -q
+          git -C "$WORKDIR" checkout -q --orphan screenshots
+          git -C "$WORKDIR" config user.name "github-actions[bot]"
+          git -C "$WORKDIR" config user.email "github-actions[bot]@users.noreply.github.com"
+          cp screenshot.png "$WORKDIR/screenshot.png"
+          git -C "$WORKDIR" add screenshot.png
+          git -C "$WORKDIR" commit -q -m "Screenshot from run ${{ github.run_id }}"
+          git -C "$WORKDIR" push -q -f \
+            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" \
+            HEAD:screenshots
+          echo "url=https://raw.githubusercontent.com/${{ github.repository }}/screenshots/screenshot.png" >> "$GITHUB_OUTPUT"
+
       - name: Embed screenshot in job summary
         run: |
           sips -Z 600 -s format jpeg -s formatOptions 70 screenshot.png --out screenshot-thumb.jpg
           {
             echo "### STVPN opening screen"
+            echo
+            echo "Direct link (always latest): ${{ steps.publish.outputs.url }}"
             echo
             if [ "${{ steps.launch.outputs.still_running }}" = "false" ]; then
               echo "**Warning:** app was not running when this screenshot was taken (see \"Collect crash diagnostics\" step above)."

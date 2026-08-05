@@ -28,6 +28,18 @@ final class TunnelManager: ObservableObject {
     private init() {
         setupStatusObserver()
         Task { await reload() }
+
+        #if DEBUG
+        // CI/screenshot-only escape hatch: skip the real Network Extension
+        // entirely and fake a "connected" state so automated screenshots can
+        // capture the running UI (incl. the zashboard dashboard) without a
+        // real tunnel — Simulator can't run one. Opt-in via env var, so it's
+        // a no-op unless explicitly requested.
+        if ProcessInfo.processInfo.environment["STVPN_FAKE_RUNNING"] == "1" {
+            EVCore.setSelectedCore(.mihomo)
+            coreRunning = true
+        }
+        #endif
     }
 
     func reload() async {
