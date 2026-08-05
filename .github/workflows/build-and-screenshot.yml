@@ -1,0 +1,89 @@
+name: Build & Screenshot
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-screenshot:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Cache SwiftPM packages
+        uses: actions/cache@v4
+        with:
+          path: DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Everywhere.xcodeproj/project.pbxproj') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Install xcodeproj gem
+        run: gem install --user-install xcodeproj
+
+      - name: Wire project (SwiftPM deps, zashboard resource, build settings)
+        run: ruby Scripts/wire_project.rb
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild \
+            -project Everywhere.xcodeproj \
+            -scheme Everywhere \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Create & boot simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          RUNTIME_ID=$(xcrun simctl list runtimes available -j | \
+            jq -r '[.runtimes[] | select(.name | startswith("iOS"))] | sort_by(.version) | last | .identifier')
+          DEVICE_TYPE_ID=$(xcrun simctl list runtimes available -j | \
+            jq -r --arg rid "$RUNTIME_ID" \
+            '.runtimes[] | select(.identifier==$rid) | .supportedDeviceTypes | map(select(.name | startswith("iPhone"))) | last | .identifier')
+          echo "Runtime: $RUNTIME_ID"
+          echo "DeviceType: $DEVICE_TYPE_ID"
+          UDID=$(xcrun simctl create STVPN-CI "$DEVICE_TYPE_ID" "$RUNTIME_ID")
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Install & launch app
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find DerivedData -name "Everywhere.app" -path "*iphonesimulator*" -print -quit)
+          echo "App path: $APP_PATH"
+          xcrun simctl install "${{ steps.sim.outputs.udid }}" "$APP_PATH"
+          xcrun simctl launch "${{ steps.sim.outputs.udid }}" com.stservice.stvpn
+          sleep 6
+
+      - name: Screenshot opening screen
+        run: xcrun simctl io "${{ steps.sim.outputs.udid }}" screenshot screenshot.png
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stvpn-opening-screen
+          path: screenshot.png
+
+      - name: Embed screenshot in job summary
+        run: |
+          {
+            echo "### STVPN opening screen"
+            echo
+            echo "![screenshot](data:image/png;base64,$(base64 -i screenshot.png | tr -d '\n'))"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Shut down simulator
+        if: always()
+        run: xcrun simctl shutdown "${{ steps.sim.outputs.udid }}" || true
