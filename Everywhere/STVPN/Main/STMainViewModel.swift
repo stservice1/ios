@@ -20,6 +20,7 @@
 
 import Combine
 import Foundation
+import NetworkExtension
 
 @MainActor
 final class STMainViewModel: ObservableObject {
