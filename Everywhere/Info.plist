@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict/>
+<dict>
+    <!-- Mirrors Android's local.properties -> buildConfigField("DYNU_API_KEY")
+         pipeline: wire_project.rb reads local.properties (gitignored, not
+         present in CI) and sets the DYNU_API_KEY build setting, which Xcode
+         substitutes in here. Read at runtime via BuildSecrets.dynuApiKey. -->
+    <key>DYNU_API_KEY</key>
+    <string>$(DYNU_API_KEY)</string>
+</dict>
 </plist>

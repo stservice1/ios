@@ -24,4 +24,11 @@ extension Configuration {
         get { CoreType(rawValue: type) ?? .xray }
         set { type = newValue.rawValue }
     }
+
+    /// Swift-side analog of Android's `Profile.imported`: there's no
+    /// separate "imported" flag in this Core Data model, but `content` is
+    /// only ever non-empty once a subscription fetch has actually
+    /// succeeded (ProfileFactory creates the row with empty content first,
+    /// then fills it in), so emptiness doubles as that flag.
+    var imported: Bool { !content.isEmpty }
 }

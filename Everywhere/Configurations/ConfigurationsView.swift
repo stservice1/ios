@@ -260,24 +260,7 @@ struct ConfigurationsView: View {
     }
 
     private func fetchConfig(from url: URL) async throws -> String {
-        var request = URLRequest(url: url)
-        request.setValue("Everywhere/1.0 Clash/1.11.0", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            throw NSError(
-                domain: "EverywhereDownload",
-                code: http.statusCode,
-                userInfo: [NSLocalizedDescriptionKey: "Server returned HTTP \(http.statusCode)."]
-            )
-        }
-        guard let content = String(data: data, encoding: .utf8) else {
-            throw NSError(
-                domain: "EverywhereDownload",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Response is not valid UTF-8 text."]
-            )
-        }
-        return content
+        try await SubscriptionFetcher.fetch(from: url)
     }
 
     private func derivedName(from url: URL) -> String {

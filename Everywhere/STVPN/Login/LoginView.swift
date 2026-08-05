@@ -4,23 +4,19 @@
 //
 //  Ported from the Android app's activity_login.xml: logo + title, a node
 //  code field, and a login button, all sitting in the upper third of the
-//  screen on a pure black background.
-//
-//  Design only for now — no validation, network calls, or cooldown/error
-//  states are wired up yet (the Android layout also has an error banner,
-//  a progress spinner, and a cooldown overlay on the button; those are
-//  logic-driven and will come with the real login flow later). Tapping
-//  "Log in" just calls `onLogin`.
+//  screen on a pure black background. Business logic (validation, cooldown,
+//  profile creation) lives in LoginViewModel — this view only binds to it.
 //
 
 import SwiftUI
+import UIKit
 
 struct LoginView: View {
-    @State private var nodeCode: String = ""
+    @StateObject private var viewModel = LoginViewModel()
     @FocusState private var fieldFocused: Bool
 
-    /// Called when the login button is tapped. No validation happens here
-    /// yet — this is purely a navigation hook for the design pass.
+    /// Called once LoginViewModel.login() reports success — switches the
+    /// app to STMainView. No further validation happens here.
     let onLogin: () -> Void
 
     var body: some View {
@@ -37,7 +33,8 @@ struct LoginView: View {
                 VStack(spacing: 24) {
                     header
                     nodeCodeField
-                    loginButton
+                    errorBanner
+                    loginArea
                 }
 
                 Spacer()
@@ -46,6 +43,16 @@ struct LoginView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(STColor.loginBackground.ignoresSafeArea())
+        .onAppear { viewModel.onAppear() }
+        .onDisappear { viewModel.onDisappear() }
+        .alert("Connection Failed", isPresented: debugAlertBinding, presenting: viewModel.debugDetails) { details in
+            Button("Copy Details") {
+                UIPasteboard.general.string = details
+            }
+            Button("Close", role: .cancel) { viewModel.debugDetails = nil }
+        } message: { details in
+            Text(details)
+        }
     }
 
     private var header: some View {
@@ -62,10 +69,10 @@ struct LoginView: View {
     }
 
     private var nodeCodeField: some View {
-        TextField("", text: $nodeCode)
+        TextField("", text: $viewModel.nodeCode)
             .focused($fieldFocused)
             .autocorrectionDisabled()
-            .textInputAutocapitalization(.never)
+            .textInputAutocapitalization(.characters)
             .foregroundStyle(STColor.textPrimary)
             .accessibilityIdentifier("loginNodeCodeField")
             .padding(16)
@@ -79,7 +86,7 @@ struct LoginView: View {
                 // when empty, matches the field's accent color always (the
                 // Android layout never shrinks it to a top-aligned label
                 // outside the box, so a plain placeholder is a faithful port).
-                if nodeCode.isEmpty {
+                if viewModel.nodeCode.isEmpty {
                     Text("Enter Node Code")
                         .foregroundStyle(STColor.loginFieldHint)
                         .padding(.horizontal, 16)
@@ -88,8 +95,47 @@ struct LoginView: View {
             }
     }
 
+    @ViewBuilder
+    private var errorBanner: some View {
+        if let error = viewModel.errorMessage {
+            Text(error)
+                .font(.system(size: 14))
+                .foregroundStyle(STColor.loginError)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(STColor.loginErrorBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+    }
+
+    /// Button, progress spinner, and cooldown countdown all occupy the same
+    /// slot so the layout doesn't jump between states — mirrors Android
+    /// hiding the button with `View.INVISIBLE` (space kept) rather than
+    /// `View.GONE`.
+    private var loginArea: some View {
+        ZStack {
+            loginButton
+                .opacity(viewModel.loginButtonVisible ? 1 : 0)
+                .disabled(!viewModel.loginButtonVisible)
+
+            if viewModel.isLoading {
+                ProgressView()
+                    .tint(.white)
+            } else if let cooldownText = viewModel.cooldownText {
+                Text(cooldownText)
+                    .font(.system(size: 14))
+                    .foregroundStyle(STColor.textSecondary)
+            }
+        }
+    }
+
     private var loginButton: some View {
-        Button(action: onLogin) {
+        Button {
+            Task {
+                let success = await viewModel.login()
+                if success { onLogin() }
+            }
+        } label: {
             Text("Log in")
                 .font(.system(size: 16))
                 .foregroundStyle(Color.white)
@@ -100,6 +146,13 @@ struct LoginView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("loginButton")
+    }
+
+    private var debugAlertBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.debugDetails != nil },
+            set: { if !$0 { viewModel.debugDetails = nil } }
+        )
     }
 }
 

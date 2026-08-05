@@ -9,11 +9,12 @@
 
 require 'xcodeproj'
 
-PROJECT_PATH       = File.expand_path('../Everywhere.xcodeproj', __dir__)
-DASHBOARD_REL_PATH = 'ThirdParty/zashboard'
-DASHBOARD_NAME     = 'zashboard'
-DEPLOYMENT_TARGET  = '15.0'
-SHARED_FOLDER      = 'Shared'
+PROJECT_PATH        = File.expand_path('../Everywhere.xcodeproj', __dir__)
+LOCAL_PROPERTIES_PATH = File.expand_path('../local.properties', __dir__)
+DASHBOARD_REL_PATH  = 'ThirdParty/zashboard'
+DASHBOARD_NAME      = 'zashboard'
+DEPLOYMENT_TARGET   = '15.0'
+SHARED_FOLDER       = 'Shared'
 
 EVERYWHERE_CORE_REPO        = 'https://github.com/NodePassProject/EverywhereCore'
 EVERYWHERE_CORE_MIN_VERSION = '2026.05.18'
@@ -251,6 +252,20 @@ end
   target.file_system_synchronized_groups ||= []
   next if target.file_system_synchronized_groups.include?(shared_group)
   target.file_system_synchronized_groups << shared_group
+end
+
+# --- DYNU_API_KEY build setting (mirrors Android's local.properties ->
+# buildConfigField("DYNU_API_KEY") pipeline) -------------------------------
+# local.properties is gitignored and won't exist in CI — that's fine, it
+# just means DYNU_API_KEY builds as "" there (same default Android's Gradle
+# script uses: `localProperties.getProperty("dynu.apiKey", "")`).
+dynu_api_key = ''
+if File.exist?(LOCAL_PROPERTIES_PATH)
+  line = File.readlines(LOCAL_PROPERTIES_PATH).find { |l| l.start_with?('dynu.apiKey=') }
+  dynu_api_key = line.sub('dynu.apiKey=', '').strip if line
+end
+app_target.build_configurations.each do |config|
+  config.build_settings['DYNU_API_KEY'] = dynu_api_key
 end
 
 project.save

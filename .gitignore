@@ -1,5 +1,6 @@
 # Secrets / local-only config — never commit
 github_token
+local.properties
 
 # Build artifacts
 build*.log
