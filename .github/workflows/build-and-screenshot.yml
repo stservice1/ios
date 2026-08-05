@@ -50,6 +50,11 @@ jobs:
 
       - name: Build for iOS Simulator
         run: |
+          # Ad-hoc sign (identity "-") rather than CODE_SIGNING_ALLOWED=NO: the
+          # Simulator needs no certificate/provisioning profile, but it does need
+          # *some* signature for entitlements (App Group, in particular) to be
+          # embedded and resolved at runtime — without it EVCore.containerURL's
+          # containerURL(forSecurityApplicationGroupIdentifier:) returns nil.
           xcodebuild \
             -project Everywhere.xcodeproj \
             -scheme Everywhere \
@@ -57,7 +62,9 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
             -derivedDataPath DerivedData \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="-" \
             build
 
       - name: Boot simulator (reuse pre-provisioned device if possible)
