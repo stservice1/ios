@@ -181,49 +181,68 @@ final class LoginViewModel: ObservableObject {
             let response = try await DNSTXTClient.get(urlString, timeout: 10)
             Log.d(tag, "DNS query response code: \(response.statusCode)")
 
-            if response.statusCode == 200 {
-                Log.d(tag, "DNS response: \(response.body)")
+            guard response.statusCode == 200 else {
+                Log.w(tag, "Node code not found in DNS")
+                return LoginValidationResult(isValid: false, message: "Node code not found")
+            }
 
-                guard let data = response.body.data(using: .utf8) else {
-                    throw NSError(domain: "LoginActivity", code: -1, userInfo: [NSLocalizedDescriptionKey: "invalid response encoding"])
-                }
-                let jsonResponse = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
-                guard let status = (jsonResponse["Status"] as? NSNumber)?.intValue else {
-                    throw NSError(domain: "LoginActivity", code: -1, userInfo: [NSLocalizedDescriptionKey: "missing Status field"])
-                }
+            Log.d(tag, "DNS response: \(response.body)")
 
-                if status == 0, let answers = jsonResponse["Answer"] as? [[String: Any]], !answers.isEmpty {
-                    let txtData = answers[0]["data"] as? String ?? ""
-                    Log.d(tag, "TXT record data: \(txtData)")
+            guard let data = response.body.data(using: .utf8) else {
+                throw NSError(domain: "LoginActivity", code: -1, userInfo: [NSLocalizedDescriptionKey: "invalid response encoding"])
+            }
+            let jsonResponse = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            guard let status = (jsonResponse["Status"] as? NSNumber)?.intValue else {
+                throw NSError(domain: "LoginActivity", code: -1, userInfo: [NSLocalizedDescriptionKey: "missing Status field"])
+            }
 
-                    let txtInfo = TXTRecordParser.parseTXTData(txtData)
+            if status == 0, let answers = jsonResponse["Answer"] as? [[String: Any]], !answers.isEmpty {
+                let txtData = answers[0]["data"] as? String ?? ""
+                Log.d(tag, "TXT record data: \(txtData)")
 
-                    // Use cache-aware logic through the orchestrator.
-                    let orchestrator = STServiceOrchestrator.shared
-                    let cachedTxtInfo = orchestrator.getCachedTxtRecordForLogin(nodeCode: nodeCode)
+                let txtInfo = TXTRecordParser.parseTXTData(txtData)
 
-                    let finalTxtInfo: TXTRecordInfo
-                    if let cachedTxtInfo, !txtData.isEmpty {
-                        if txtInfo.modified <= cachedTxtInfo.modified {
-                            Log.d(tag, "DNS returned stale data (\(txtInfo.modified) <= \(cachedTxtInfo.modified)), using cached")
-                            finalTxtInfo = cachedTxtInfo
-                        } else {
-                            Log.d(tag, "DNS returned fresh data (\(txtInfo.modified) > \(cachedTxtInfo.modified)), updating cache")
-                            orchestrator.cacheTxtRecordForLogin(txtInfo, nodeCode: nodeCode)
-                            finalTxtInfo = txtInfo
-                        }
+                // Use cache-aware logic through the orchestrator.
+                let orchestrator = STServiceOrchestrator.shared
+                let cachedTxtInfo = orchestrator.getCachedTxtRecordForLogin(nodeCode: nodeCode)
+
+                let finalTxtInfo: TXTRecordInfo
+                if let cachedTxtInfo, !txtData.isEmpty {
+                    if txtInfo.modified <= cachedTxtInfo.modified {
+                        Log.d(tag, "DNS returned stale data (\(txtInfo.modified) <= \(cachedTxtInfo.modified)), using cached")
+                        finalTxtInfo = cachedTxtInfo
                     } else {
-                        Log.d(tag, "No cached data available, using fresh DNS data")
+                        Log.d(tag, "DNS returned fresh data (\(txtInfo.modified) > \(cachedTxtInfo.modified)), updating cache")
                         orchestrator.cacheTxtRecordForLogin(txtInfo, nodeCode: nodeCode)
                         finalTxtInfo = txtInfo
                     }
-
-                    return validateTxtRecord(finalTxtInfo)
+                } else {
+                    Log.d(tag, "No cached data available, using fresh DNS data")
+                    orchestrator.cacheTxtRecordForLogin(txtInfo, nodeCode: nodeCode)
+                    finalTxtInfo = txtInfo
                 }
+
+                return validateTxtRecord(finalTxtInfo)
             }
 
-            Log.w(tag, "Node code not found in DNS")
-            return LoginValidationResult(isValid: false, message: "Node code not found")
+            // No usable Answer. Distinguish a genuine "this node code
+            // doesn't exist" (NXDOMAIN, RCODE 3) from the resolver itself
+            // failing the query (SERVFAIL, RCODE 2, and other non-zero
+            // RCODEs) — the latter isn't evidence the code is invalid, so
+            // it gets its own message and (since handleValidationFailure
+            // only matches specific strings) doesn't burn one of the
+            // user's 3 login attempts.
+            switch status {
+            case 2:
+                Log.w(tag, "DNS resolver returned SERVFAIL (status 2) for the query")
+                return LoginValidationResult(isValid: false, message: "DNS server error, please try again")
+            case 3:
+                Log.w(tag, "Node code not found in DNS (NXDOMAIN)")
+                return LoginValidationResult(isValid: false, message: "Node code not found")
+            default:
+                Log.w(tag, "Node code not found in DNS (status \(status))")
+                return LoginValidationResult(isValid: false, message: status == 0 ? "Node code not found" : "DNS error (status \(status)), please try again")
+            }
         } catch {
             Log.e(tag, "Network error during validation: \(error.localizedDescription)", error)
             return LoginValidationResult(isValid: false, message: "Network error: \(error.localizedDescription)")
