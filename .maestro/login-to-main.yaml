@@ -3,8 +3,10 @@
 # way. Login now does real AliDNS TXT-record validation against the node
 # code (see LoginViewModel) — if SC645888 isn't a currently valid code, the
 # app correctly stays on LoginView with its real error banner instead of
-# switching to Main. `extendedWaitUntil` (not `assertVisible`) is used
-# specifically so that outcome doesn't fail the flow: the screenshot itself
+# switching to Main. `extendedWaitUntil` + `optional: true` is used
+# specifically so that outcome doesn't fail the flow (extendedWaitUntil
+# alone still fails it on timeout, same as assertVisible — `optional` is
+# what actually makes a failing command non-fatal): the screenshot itself
 # is the diagnostic (Main view on success, Login view + error banner text
 # on failure) rather than a hard pass/fail signal.
 #
@@ -26,4 +28,5 @@ appId: com.stservice.stvpn
     visible:
       id: "stMainView"
     timeout: 30000
+    optional: true
 - takeScreenshot: main-view
