@@ -1,0 +1,19 @@
+# Maestro flow: types the node code, logs in, and waits for the Main
+# screen to appear. Run against an already-booted Simulator with the app
+# already installed (CI does both before invoking this).
+#
+# Local usage:
+#   maestro test .maestro/login-to-main.yaml
+appId: com.stservice.stvpn
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: "loginNodeCodeField"
+- inputText: "SC645888"
+- tapOn:
+    id: "loginButton"
+- assertVisible:
+    id: "stMainView"
+    timeout: 15000
+- takeScreenshot: main-view

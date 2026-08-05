@@ -67,6 +67,7 @@ struct LoginView: View {
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
             .foregroundStyle(STColor.textPrimary)
+            .accessibilityIdentifier("loginNodeCodeField")
             .padding(16)
             .background(STColor.loginFieldBackground)
             .overlay(
@@ -98,6 +99,7 @@ struct LoginView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 24))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("loginButton")
     }
 }
 

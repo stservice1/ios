@@ -144,15 +144,40 @@ jobs:
           xcrun simctl spawn "$UDID" log show --last 3m --predicate 'process == "Everywhere"' 2>/dev/null | tail -300 || true
 
       - name: Screenshot opening screen
-        run: xcrun simctl io "${{ steps.sim.outputs.udid }}" screenshot screenshot.png
+        run: xcrun simctl io "${{ steps.sim.outputs.udid }}" screenshot screenshot-login.png
 
-      - name: Upload screenshot artifact
+      - name: Install Maestro + idb (UI automation for the login flow)
+        run: |
+          brew tap facebook/fb
+          brew install facebook/fb/idb-companion
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Run login flow with Maestro (type node code, log in, screenshot Main)
+        id: maestro
+        continue-on-error: true # best-effort: don't let a flaky UI-automation step sink the login screenshot we already have
+        run: |
+          set -euo pipefail
+          export PATH="$PATH:$HOME/.maestro/bin"
+          maestro --device "${{ steps.sim.outputs.udid }}" test .maestro/login-to-main.yaml
+          SHOT=$(find . "$HOME" -maxdepth 4 -iname "main-view.png" -newermt '-2 minutes' -print -quit 2>/dev/null)
+          if [ -z "$SHOT" ]; then
+            echo "::warning::Maestro flow ran but main-view.png wasn't found."
+            exit 1
+          fi
+          cp "$SHOT" screenshot-main.png
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload screenshot artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: stvpn-opening-screen
-          path: screenshot.png
+          name: stvpn-screenshots
+          path: |
+            screenshot-login.png
+            screenshot-main.png
+          if-no-files-found: ignore
 
-      - name: Publish screenshot to screenshots branch (stable direct link)
+      - name: Publish screenshots to screenshots branch (stable direct links)
         id: publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -163,27 +188,44 @@ jobs:
           git -C "$WORKDIR" checkout -q --orphan screenshots
           git -C "$WORKDIR" config user.name "github-actions[bot]"
           git -C "$WORKDIR" config user.email "github-actions[bot]@users.noreply.github.com"
-          cp screenshot.png "$WORKDIR/screenshot.png"
-          git -C "$WORKDIR" add screenshot.png
-          git -C "$WORKDIR" commit -q -m "Screenshot from run ${{ github.run_id }}"
+          cp screenshot-login.png "$WORKDIR/screenshot-login.png"
+          git -C "$WORKDIR" add screenshot-login.png
+          if [ -f screenshot-main.png ]; then
+            cp screenshot-main.png "$WORKDIR/screenshot-main.png"
+            git -C "$WORKDIR" add screenshot-main.png
+          fi
+          git -C "$WORKDIR" commit -q -m "Screenshots from run ${{ github.run_id }}"
           git -C "$WORKDIR" push -q -f \
             "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" \
             HEAD:screenshots
-          echo "url=https://raw.githubusercontent.com/${{ github.repository }}/screenshots/screenshot.png" >> "$GITHUB_OUTPUT"
+          BASE="https://raw.githubusercontent.com/${{ github.repository }}/screenshots"
+          echo "login_url=$BASE/screenshot-login.png" >> "$GITHUB_OUTPUT"
+          echo "main_url=$BASE/screenshot-main.png" >> "$GITHUB_OUTPUT"
 
-      - name: Embed screenshot in job summary
+      - name: Embed screenshots in job summary
         run: |
-          sips -Z 600 -s format jpeg -s formatOptions 70 screenshot.png --out screenshot-thumb.jpg
+          sips -Z 600 -s format jpeg -s formatOptions 70 screenshot-login.png --out screenshot-login-thumb.jpg
           {
-            echo "### STVPN opening screen"
+            echo "### Login screen"
             echo
-            echo "Direct link (always latest): ${{ steps.publish.outputs.url }}"
+            echo "Direct link (always latest): ${{ steps.publish.outputs.login_url }}"
             echo
             if [ "${{ steps.launch.outputs.still_running }}" = "false" ]; then
               echo "**Warning:** app was not running when this screenshot was taken (see \"Collect crash diagnostics\" step above)."
               echo
             fi
-            echo "![screenshot](data:image/jpeg;base64,$(base64 -i screenshot-thumb.jpg | tr -d '\n'))"
+            echo "![login screenshot](data:image/jpeg;base64,$(base64 -i screenshot-login-thumb.jpg | tr -d '\n'))"
+            echo
+            echo "### Main screen (after Maestro login flow)"
+            echo
+            if [ -f screenshot-main.png ]; then
+              sips -Z 600 -s format jpeg -s formatOptions 70 screenshot-main.png --out screenshot-main-thumb.jpg
+              echo "Direct link (always latest): ${{ steps.publish.outputs.main_url }}"
+              echo
+              echo "![main screenshot](data:image/jpeg;base64,$(base64 -i screenshot-main-thumb.jpg | tr -d '\n'))"
+            else
+              echo "**The Maestro login flow didn't produce a screenshot this run** — see the \"Run login flow with Maestro\" step's log."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Shut down simulator

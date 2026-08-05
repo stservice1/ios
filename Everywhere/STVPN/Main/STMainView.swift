@@ -35,6 +35,7 @@ struct STMainView: View {
             }
             .padding(.horizontal, STMetrics.mainHorizontalPadding)
         }
+        .accessibilityIdentifier("stMainView")
         .background(STColor.background.ignoresSafeArea())
         .animation(.default, value: isRunning)
     }
@@ -67,6 +68,7 @@ struct STMainView: View {
             backgroundColor: isRunning ? STColor.brandGreen : STColor.surface,
             action: { isRunning.toggle() }
         )
+        .accessibilityIdentifier("statusCard")
     }
 
     private var proxyCard: some View {
@@ -77,6 +79,7 @@ struct STMainView: View {
             backgroundColor: STColor.surface,
             action: {}
         )
+        .accessibilityIdentifier("proxyCard")
         .transition(.opacity)
     }
 
