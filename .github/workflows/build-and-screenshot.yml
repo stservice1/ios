@@ -66,13 +66,40 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
 
       - name: Install & launch app
+        id: launch
         run: |
           set -euo pipefail
+          UDID="${{ steps.sim.outputs.udid }}"
           APP_PATH=$(find DerivedData -name "Everywhere.app" -path "*iphonesimulator*" -print -quit)
           echo "App path: $APP_PATH"
-          xcrun simctl install "${{ steps.sim.outputs.udid }}" "$APP_PATH"
-          xcrun simctl launch "${{ steps.sim.outputs.udid }}" com.stservice.stvpn
+          xcrun simctl install "$UDID" "$APP_PATH"
+
+          is_running() {
+            xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -q "com.stservice.stvpn"
+          }
+
+          xcrun simctl launch "$UDID" com.stservice.stvpn
           sleep 6
+          if ! is_running; then
+            echo "App not running after first launch attempt, retrying once..."
+            xcrun simctl launch "$UDID" com.stservice.stvpn || true
+            sleep 6
+          fi
+          if is_running; then
+            echo "still_running=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "still_running=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::App does not appear to be running after launch — likely crashed. Collecting diagnostics."
+          fi
+
+      - name: Collect crash diagnostics
+        if: steps.launch.outputs.still_running == 'false'
+        run: |
+          UDID="${{ steps.sim.outputs.udid }}"
+          echo "--- Recent crash reports (DiagnosticReports) ---"
+          find "$HOME/Library/Logs/DiagnosticReports" -iname "*Everywhere*" -newermt '-5 minutes' -exec echo {} \; -exec cat {} \; 2>/dev/null || true
+          echo "--- Recent unified log for the process ---"
+          xcrun simctl spawn "$UDID" log show --last 3m --predicate 'process == "Everywhere"' 2>/dev/null | tail -300 || true
 
       - name: Screenshot opening screen
         run: xcrun simctl io "${{ steps.sim.outputs.udid }}" screenshot screenshot.png
@@ -85,10 +112,15 @@ jobs:
 
       - name: Embed screenshot in job summary
         run: |
+          sips -Z 600 -s format jpeg -s formatOptions 70 screenshot.png --out screenshot-thumb.jpg
           {
             echo "### STVPN opening screen"
             echo
-            echo "![screenshot](data:image/png;base64,$(base64 -i screenshot.png | tr -d '\n'))"
+            if [ "${{ steps.launch.outputs.still_running }}" = "false" ]; then
+              echo "**Warning:** app was not running when this screenshot was taken (see \"Collect crash diagnostics\" step above)."
+              echo
+            fi
+            echo "![screenshot](data:image/jpeg;base64,$(base64 -i screenshot-thumb.jpg | tr -d '\n'))"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Shut down simulator
