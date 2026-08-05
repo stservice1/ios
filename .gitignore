@@ -1,0 +1,8 @@
+# Build artifacts
+build*.log
+DerivedData/
+*.xcuserdatad/
+xcuserdata/
+
+# macOS
+.DS_Store
