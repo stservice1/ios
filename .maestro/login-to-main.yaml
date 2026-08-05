@@ -15,5 +15,4 @@ appId: com.stservice.stvpn
     id: "loginButton"
 - assertVisible:
     id: "stMainView"
-    timeout: 15000
 - takeScreenshot: main-view
