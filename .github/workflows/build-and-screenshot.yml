@@ -32,6 +32,16 @@ jobs:
           restore-keys: |
             spm-${{ runner.os }}-
 
+      - name: Cache Xcode build products (incremental build)
+        uses: actions/cache@v4
+        with:
+          path: |
+            DerivedData/Build
+            DerivedData/ModuleCache.noindex
+          key: build-${{ runner.os }}-${{ hashFiles('Everywhere/**/*.swift', 'EverywhereNE/**/*.swift', 'Shared/**/*.swift', 'Everywhere.xcodeproj/project.pbxproj') }}
+          restore-keys: |
+            build-${{ runner.os }}-
+
       - name: Install xcodeproj gem
         run: gem install --user-install xcodeproj
 
@@ -50,18 +60,34 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Create & boot simulator
+      - name: Boot simulator (reuse pre-provisioned device if possible)
         id: sim
         run: |
           set -euo pipefail
           RUNTIME_ID=$(xcrun simctl list runtimes available -j | \
             jq -r '[.runtimes[] | select(.name | startswith("iOS"))] | sort_by(.version) | last | .identifier')
-          DEVICE_TYPE_ID=$(xcrun simctl list runtimes available -j | \
-            jq -r --arg rid "$RUNTIME_ID" \
-            '.runtimes[] | select(.identifier==$rid) | .supportedDeviceTypes | map(select(.name | startswith("iPhone"))) | last | .identifier')
           echo "Runtime: $RUNTIME_ID"
-          echo "DeviceType: $DEVICE_TYPE_ID"
-          UDID=$(xcrun simctl create STVPN-CI "$DEVICE_TYPE_ID" "$RUNTIME_ID")
+
+          # Runner images ship with a handful of simulators already created for the
+          # default Xcode — booting one of those skips the ~60-70s first-boot data
+          # migration that `simctl create` pays on a brand new device. Fall back to
+          # creating one if none exist for the runtime we picked (e.g. it's newer
+          # than the image's bundled default).
+          UDID=$(xcrun simctl list devices available -j | \
+            jq -r --arg rid "$RUNTIME_ID" \
+            '.devices[$rid] // [] | map(select(.name | startswith("iPhone"))) | .[0].udid // empty')
+
+          if [ -z "$UDID" ]; then
+            echo "No pre-provisioned device for $RUNTIME_ID — creating one."
+            DEVICE_TYPE_ID=$(xcrun simctl list runtimes available -j | \
+              jq -r --arg rid "$RUNTIME_ID" \
+              '.runtimes[] | select(.identifier==$rid) | .supportedDeviceTypes | map(select(.name | startswith("iPhone"))) | last | .identifier')
+            echo "DeviceType: $DEVICE_TYPE_ID"
+            UDID=$(xcrun simctl create STVPN-CI "$DEVICE_TYPE_ID" "$RUNTIME_ID")
+          else
+            echo "Reusing pre-provisioned device: $UDID"
+          fi
+
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           xcrun simctl bootstatus "$UDID" -b
 
